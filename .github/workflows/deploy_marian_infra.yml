@@ -1,6 +1,5 @@
 name: DEPLOY_MARIAN_INFRA
 
-
 on:
   workflow_dispatch:
     inputs:
