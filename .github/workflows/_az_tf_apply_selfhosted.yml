@@ -1,0 +1,101 @@
+### Reusable workflow to download terraform artifact built by `az_tf_plan` and apply the artifact/plan ###
+name: '_az_tf_apply_selfhosted'
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: 'Specifies the path of the root terraform module.'
+        required: true
+        type: string
+      tf_version:
+        description: 'Specifies version of Terraform to use. e.g: 1.1.0 Default=latest.'
+        required: false
+        type: string
+        default: latest
+      az_resource_group:
+        description: 'Specifies the Azure Resource Group where the backend storage account is hosted.'
+        required: true
+        type: string
+      az_storage_acc:
+        description: 'Specifies the Azure Storage Account where the backend state is hosted.'
+        required: true
+        type: string
+      az_container_name:
+        description: 'Specifies the Azure Storage account container where backend Terraform state is hosted.'
+        required: true
+        type: string
+      tf_key:
+        description: 'Specifies the Terraform state file name. Workflow artifact will be the same name.'
+        required: true
+        type: string
+      gh_environment:
+        description: 'Specifies the GitHub deployment environment.'
+        required: false
+        type: string
+    secrets:
+      arm_client_id:
+        description: 'Specifies the Azure CLIENT ID.'
+        required: true
+      arm_client_secret:
+        description: 'Specifies the Azure CLIENT SECRET.'
+        required: true
+      arm_subscription_login:
+        description: 'Specifies the Azure CREDSUBSCRIPTION LOGIN.'
+        required: true
+      arm_tenant_id:
+        description: 'Specifies the Azure TENANT ID.'
+        required: true
+      k8s_argocd_app_of_apps_repo_key:
+        description: 'SSH Key for Git repo with app of apps ArgoCD configuration'
+        required: true
+      azure_acr_helm_username:
+        description: 'ACR Helm access SP username'
+        required: true
+      azure_acr_helm_password:
+        description: 'ACR Helm access SP password'
+        required: true
+
+jobs:
+  apply-plan:
+    runs-on: [self-hosted, linux, x64, '${{ inputs.gh_environment }}']
+    environment: ${{ inputs.gh_environment }}
+    defaults:
+      run:
+        shell: bash
+
+    env:
+      STORAGE_ACCOUNT: ${{ inputs.az_storage_acc }}
+      CONTAINER_NAME: ${{ inputs.az_container_name }}
+      RESOURCE_GROUP: ${{ inputs.az_resource_group }}
+      TF_KEY: ${{ inputs.tf_key }}.tfstate
+      ###AZURE Client details###
+      ARM_CLIENT_ID: ${{ secrets.arm_client_id }}
+      ARM_CLIENT_SECRET: ${{ secrets.arm_client_secret }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.arm_subscription_login }}
+      ARM_TENANT_ID: ${{ secrets.arm_tenant_id }}
+      TF_VAR_k8s_argocd_app_of_apps_repo_key: ${{ secrets.k8s_argocd_app_of_apps_repo_key }}
+      TF_VAR_azure_kv_sp_secret: ${{ secrets.arm_client_secret }}
+      TF_VAR_azure_acr_helm_username: ${{ secrets.azure_acr_helm_username }}
+      TF_VAR_azure_acr_helm_password: ${{ secrets.azure_acr_helm_password }}
+      TF_VAR_service_principal_secret: ${{ secrets.arm_client_secret }}
+      TF_LOG: DEBUG
+
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: '${{ inputs.tf_key }}'
+
+      - name: Decompress TF Plan artifact
+        run: unzip -o ${{ inputs.tf_key }}.zip
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2.0.3
+        with:
+          terraform_version: ${{ inputs.tf_version }}
+
+      - name: Terraform Init
+        id: init
+        run: terraform init --backend-config="storage_account_name=$STORAGE_ACCOUNT" --backend-config="container_name=$CONTAINER_NAME" --backend-config="resource_group_name=$RESOURCE_GROUP" --backend-config="key=$TF_KEY"
+
+      - name: Terraform Apply
+        run: terraform apply plan.tfplan
