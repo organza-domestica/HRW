@@ -1,4 +1,4 @@
-name: DEPLOY_DEV_K8S
+name: DEPLOY_MARIAN_K8S
 
 runs-on: self-hosted
 

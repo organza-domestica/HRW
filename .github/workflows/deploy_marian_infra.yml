@@ -1,4 +1,4 @@
-name: DEPLOY_DEV_INFRA
+name: DEPLOY_MARIAN_INFRA
 
 
 on:
