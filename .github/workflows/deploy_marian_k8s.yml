@@ -1,0 +1,65 @@
+name: DEPLOY_DEV_K8S
+
+runs-on: self-hosted
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        description: Deploy action
+        options:
+        - plan
+        - apply
+        - destroy
+      TFSec:
+        type: boolean
+        default: false
+        description: TFSec
+
+jobs:
+  Plan:
+    runs-on: self-hosted
+    uses: ./.github/workflows/_az_tf_plan_selfhosted.yml
+    with:
+      path: kubernetes
+      tf_vars_path: "environments/marian/vars.tfvars"
+      tf_version: 1.5.6
+      az_resource_group: "az-lx-rg-tf-hrw-marian"
+      az_storage_acc: "azlxsttfhrwmariantest"
+      az_container_name: tfstate
+      tf_key: "az-lx-hrw-aks-marian"
+      enable_TFSEC: ${{ github.event.inputs.TFSec == 'true' }}
+      destroy: ${{ github.event.inputs.action == 'destroy' }}
+      gh_environment: "marian"
+      upload_artifact: true
+    secrets:
+      arm_client_id: ${{ secrets.ARM_CLIENT_ID }}
+      arm_client_secret: ${{ secrets.ARM_CLIENT_SECRET }}
+      arm_subscription_login: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      arm_tenant_id: ${{ secrets.ARM_TENANT_ID }}
+      sql_administrator_login: ${{ secrets.SQL_ADMINISTRATOR_LOGIN }}
+      k8s_argocd_app_of_apps_repo_key: ${{ secrets.K8S_ARGOCD_APP_OF_APPS_REPO_KEY }}
+      azure_acr_helm_username: ${{ secrets.AZURE_ACR_HELM_USERNAME }}
+      azure_acr_helm_password: ${{ secrets.AZURE_ACR_HELM_PASSWORD }}
+  Deploy:
+    runs-on: self-hosted
+    needs: Plan
+    if: ${{ github.event.inputs.action == 'apply' }}
+    uses: ./.github/workflows/_az_tf_apply_selfhosted.yml
+    with:
+      path: kubernetes
+      tf_version: 1.5.6
+      az_resource_group: "az-lx-rg-tf-hrw-marian"
+      az_storage_acc: "azlxsttfhrwmariantest"
+      az_container_name: tfstate
+      tf_key: "az-lx-hrw-aks-marian"
+      gh_environment: "marian"
+    secrets:
+      arm_client_id: ${{ secrets.ARM_CLIENT_ID }}
+      arm_client_secret: ${{ secrets.ARM_CLIENT_SECRET }}
+      arm_subscription_login: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      arm_tenant_id: ${{ secrets.ARM_TENANT_ID }}
+      k8s_argocd_app_of_apps_repo_key: ${{ secrets.K8S_ARGOCD_APP_OF_APPS_REPO_KEY }}
+      azure_acr_helm_username: ${{ secrets.AZURE_ACR_HELM_USERNAME }}
+      azure_acr_helm_password: ${{ secrets.AZURE_ACR_HELM_PASSWORD }}

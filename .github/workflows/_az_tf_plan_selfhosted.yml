@@ -1,0 +1,191 @@
+name: _az_tf_plan_selfhosted
+on:
+  workflow_call:
+    inputs:
+      path:
+        description: 'Specifies the path of the root terraform module.'
+        required: true
+        type: string
+      tf_vars_path:
+        description: 'Specifies the path of the tfvars .file.'
+        required: true
+        type: string
+      tf_version:
+        description: 'Specifies version of Terraform to use. e.g: 1.1.0 Default=latest.'
+        required: false
+        type: string
+        default: latest
+      az_resource_group:
+        description: 'Specifies the Azure Resource Group where the backend storage account is hosted.'
+        required: true
+        type: string
+      az_storage_acc:
+        description: 'Specifies the Azure Storage Account where the backend state is hosted.'
+        required: true
+        type: string
+      az_container_name:
+        description: 'Specifies the Azure Storage account container where backend Terraform state is hosted.'
+        required: true
+        type: string
+      tf_key:
+        description: 'Specifies the Terraform state file name for this plan. Workflow artifact will use same name'
+        required: true
+        type: string
+      gh_environment:
+        description: 'Specifies the GitHub deployment environment.'
+        required: false
+        type: string
+      enable_TFSEC:
+        description: '(Optional) Enables TFSEC IaC scans and code quality checks on Terraform configurations'
+        required: false
+        type: boolean
+        default: false
+      destroy:
+        description: 'Makes Terraform plan destroy'
+        required: false
+        type: boolean
+        default: false
+      upload_artifact:
+        description: 'Specifies whether upload generated plan or not.'
+        type: boolean
+        default: true
+    secrets:
+      arm_client_id:
+        description: 'Specifies the Azure CLIENT ID.'
+        required: true
+      arm_client_secret:
+        description: 'Specifies the Azure CLIENT SECRET.'
+        required: true
+      arm_subscription_login:
+        description: 'Specifies the Azure CREDSUBSCRIPTION LOGIN.'
+        required: true
+      arm_tenant_id:
+        description: 'Specifies the Azure TENANT ID.'
+        required: true
+      sql_administrator_login:
+        description: 'Specifies SQL Administrator login.'
+        required: true
+      k8s_argocd_app_of_apps_repo_key:
+        description: 'SSH Key for Git repo with app of apps ArgoCD configuration'
+        required: true
+      azure_acr_helm_username:
+        description: 'ACR Helm access SP username'
+        required: true
+      azure_acr_helm_password:
+        description: 'ACR Helm access SP password'
+        required: true
+
+jobs:
+  build_plan:
+    runs-on: [self-hosted, linux, x64, '${{ inputs.gh_environment }}']
+    environment: '${{ inputs.gh_environment }}'
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ inputs.path }}
+    env:
+      STORAGE_ACCOUNT: ${{ inputs.az_storage_acc }}
+      CONTAINER_NAME: ${{ inputs.az_container_name }}
+      RESOURCE_GROUP: ${{ inputs.az_resource_group }}
+      TF_KEY: ${{ inputs.tf_key }}.tfstate
+      ###AZURE Client details###
+      ARM_CLIENT_ID: ${{ secrets.arm_client_id }}
+      ARM_CLIENT_SECRET: ${{ secrets.arm_client_secret }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.arm_subscription_login }}
+      ARM_TENANT_ID: ${{ secrets.arm_tenant_id }}
+      TF_VAR_k8s_argocd_app_of_apps_repo_key: ${{ secrets.k8s_argocd_app_of_apps_repo_key }}
+      TF_VAR_azure_kv_sp_secret: ${{ secrets.arm_client_secret }}
+      TF_VAR_azure_acr_helm_username: ${{ secrets.azure_acr_helm_username }}
+      TF_VAR_azure_acr_helm_password: ${{ secrets.azure_acr_helm_password }}
+      TF_VAR_service_principal_secret: ${{ secrets.arm_client_secret }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Scan IaC - tfsec
+        if: ${{ inputs.enable_TFSEC == true }}
+        uses: aquasecurity/tfsec-sarif-action@v0.1.3
+        with:
+          sarif_file: tfsec.sarif
+
+      - name: Upload SARIF file
+        if: ${{ inputs.enable_TFSEC == true }}
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: tfsec.sarif
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2.0.3
+        with:
+          terraform_version: ${{ inputs.tf_version }}
+
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt --check
+
+      - name: Terraform Init
+        id: init
+        run: terraform init --backend-config="storage_account_name=$STORAGE_ACCOUNT" --backend-config="container_name=$CONTAINER_NAME" --backend-config="resource_group_name=$RESOURCE_GROUP" --backend-config="key=$TF_KEY"
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan ${{ inputs.destroy && '-destroy' || '' }} -var-file='${{ inputs.tf_vars_path }}' -var 'sql_administrator_login=${{ secrets.sql_administrator_login }}' -no-color --out=plan.tfplan
+        continue-on-error: true
+
+      - name: Reformat Plan
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          echo '${{ steps.plan.outputs.stdout || steps.plan.outputs.stderr }}' \
+          | sed -E 's/^([[:space:]]+)([-+])/\2\1/g' > /tmp/plan.txt
+
+      - name: Update Pull Request
+        uses: actions/github-script@v6
+        if: ${{ github.event_name == 'pull_request' }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require("fs");
+            const plan = fs.readFileSync("/tmp/plan.txt", "utf8");
+
+            const output = `#### Terraform Format and Style 🖌\`${{ steps.fmt.outcome }}\`
+            #### Terraform Initialization ⚙️\`${{ steps.init.outcome }}\`
+            #### Terraform Plan 📖\`${{ steps.plan.outcome }}\`
+            #### Terraform Validation 🤖\`${{ steps.validate.outcome }}\`
+
+            <details><summary>Show Plan</summary>
+
+            \`\`\`diff
+            ${plan}
+            \`\`\`
+
+            </details>
+
+            *Pushed by: @${{ github.actor }}, Action: \`${{ github.event_name }}\`*`;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            })
+
+      - name: Terraform Plan Status
+        if: steps.plan.outcome == 'failure'
+        run: exit 1
+
+      - name: Compress TF Plan artifact
+        if: ${{ inputs.upload_artifact == true }}
+        run: zip -r ${{ inputs.tf_key }}.zip . -x '.terraform/*'
+
+      - name: Upload Artifact
+        if: ${{ inputs.upload_artifact == true }}
+        uses: actions/upload-artifact@v3.1.0
+        with:
+          name: '${{ inputs.tf_key }}'
+          path: '${{ inputs.path }}/${{ inputs.tf_key }}.zip'
+          retention-days: 5

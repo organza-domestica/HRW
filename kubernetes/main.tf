@@ -202,7 +202,7 @@ resource "kubernetes_secret_v1" "argocd_infra_repo" {
 
   data = {
     "type"          = "git"
-    "url"           = "git@github.com:/LUXMED/argocd-lx-environments.git"
+    "url"           = "git@github.com:organza-domestica/argocd-lx-environments-marian.git"
     "sshPrivateKey" = var.k8s_argocd_app_of_apps_repo_key
   }
 }
@@ -347,7 +347,7 @@ resource "kubectl_manifest" "argocd_4net_app_of_apps" {
           valueFiles:
           - env/azure-${var.environment}/${local.aks_name}.yaml
         path: apps
-        repoURL: git@github.com:/LUXMED/argocd-lx-environments.git
+        repoURL: git@github.com:${var.githubuser}/argocd-lx-environments-${var.environment}.git
         targetRevision: main
       destination:
         server: https://kubernetes.default.svc

@@ -1,0 +1,61 @@
+name: DEPLOY_PRE_INFRA
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        type: choice
+        description: Deploy action
+        options:
+        - plan
+        - apply
+        - destroy
+      TFSec:
+        type: boolean
+        default: false
+        description: TFSec
+
+jobs:
+  Plan:
+    uses: ./.github/workflows/_az_tf_plan_selfhosted.yml
+    with:
+      path: infrastructure
+      tf_vars_path: "environments/pre/vars.tfvars"
+      tf_version: 1.2.6
+      az_resource_group: "az-lx-rg-tf-hrw-pre"
+      az_storage_acc: "azlxsttfhrwpre"
+      az_container_name: tfstate
+      tf_key: "az-lx-hrw-pre"
+      enable_TFSEC: ${{ github.event.inputs.TFSec == 'true' }}
+      destroy: ${{ github.event.inputs.action == 'destroy' }}
+      gh_environment: "pre"
+      upload_artifact: true
+    secrets:
+      arm_client_id: ${{ secrets.PRE_ARM_CLIENT_ID }}
+      arm_client_secret: ${{ secrets.PRE_ARM_CLIENT_SECRET }}
+      arm_subscription_login: ${{ secrets.PRE_ARM_SUBSCRIPTION_ID }}
+      arm_tenant_id: ${{ secrets.PRE_ARM_TENANT_ID }}
+      sql_administrator_login: ${{ secrets.PRE_SQL_ADMINISTRATOR_LOGIN }}
+      k8s_argocd_app_of_apps_repo_key: ${{ secrets.K8S_ARGOCD_APP_OF_APPS_REPO_KEY }}
+      azure_acr_helm_username: ${{ secrets.PRE_AZURE_ACR_HELM_USERNAME }}
+      azure_acr_helm_password: ${{ secrets.PRE_AZURE_ACR_HELM_PASSWORD }}
+  Deploy:
+    needs: Plan
+    if: ${{ github.event.inputs.action == 'apply' }}
+    uses: ./.github/workflows/_az_tf_apply_selfhosted.yml
+    with:
+      path: infrastructure
+      tf_version: 1.2.6
+      az_resource_group: "az-lx-rg-tf-hrw-pre"
+      az_storage_acc: "azlxsttfhrwpre"
+      az_container_name: tfstate
+      tf_key: "az-lx-hrw-pre"
+      gh_environment: "pre"
+    secrets:
+      arm_client_id: ${{ secrets.PRE_ARM_CLIENT_ID }}
+      arm_client_secret: ${{ secrets.PRE_ARM_CLIENT_SECRET }}
+      arm_subscription_login: ${{ secrets.PRE_ARM_SUBSCRIPTION_ID }}
+      arm_tenant_id: ${{ secrets.PRE_ARM_TENANT_ID }}
+      k8s_argocd_app_of_apps_repo_key: ${{ secrets.K8S_ARGOCD_APP_OF_APPS_REPO_KEY }}
+      azure_acr_helm_username: ${{ secrets.PRE_AZURE_ACR_HELM_USERNAME }}
+      azure_acr_helm_password: ${{ secrets.PRE_AZURE_ACR_HELM_PASSWORD }}
