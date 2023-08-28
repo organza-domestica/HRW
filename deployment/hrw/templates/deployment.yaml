@@ -1,0 +1,222 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hrw
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: hrw
+    owner: z8
+    project: hrw
+    business-unit: hr
+    app.kubernetes.io/name: hrw-app
+    app.kubernetes.io/instance: hrw-app-5fa65d2
+    app.kubernetes.io/version: "0.1.0.0"
+    app.kubernetes.io/component: app
+    app.kubernetes.io/part-of: hrw
+    app.kubernetes.io/managed-by: helm
+spec:
+  selector:
+    matchLabels:
+      app: hrw
+  replicas: {{ .Values.hrw.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # how many pods we can add at a time
+      maxUnavailable: 0  # maxUnavailable define how many pods can be unavailable during the rolling update
+  template:
+    metadata:
+      labels:
+        app: hrw
+        owner: z8
+        project: hrw
+        business-unit: hr
+        app.kubernetes.io/name: hrw-app
+        app.kubernetes.io/instance: hrw-app-5fa65d2
+        app.kubernetes.io/version: "0.1.0.0"
+        app.kubernetes.io/component: app
+        app.kubernetes.io/part-of: hrw
+        app.kubernetes.io/managed-by: helm
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /healthz/metrics
+        prometheus.io/port: "8080"
+    spec:
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+      volumes:
+      - name: tmpfs
+        emptyDir: {}
+      {{ if eq .Values.environment.type "onprem" }}
+      - name: hrw-repository-v
+        persistentVolumeClaim:
+          claimName: hrw-repository-pvc
+      {{ end }}
+      containers:
+      - name: hrw
+        image: {{ .Values.hrw.image }}
+        env:
+        # Configuration Manager Variables
+        {{ if eq .Values.environment.type "onprem" }}
+        - name: db_hrw_user_name
+          valueFrom:
+            secretKeyRef:
+              name: hrw-secret
+              key: db-sql2012.instance-misc.user-hrw.name
+        - name: db_hrw_user_password
+          valueFrom:
+            secretKeyRef:
+              name: hrw-secret
+              key: db-sql2012.instance-misc.user-hrw.password
+        - name: db_hangfire_user_name
+          valueFrom:
+            secretKeyRef:
+              name: hrw-secret
+              key: db-sql2012.instance-misc.user-hangfire-hrw.name
+        - name: db_hangfire_user_password
+          valueFrom:
+            secretKeyRef:
+              name: hrw-secret
+              key: db-sql2012.instance-misc.user-hangfire-hrw.password
+        - name: azure_hrw_filestorage_connectionstring
+          valueFrom:
+            secretKeyRef:
+              name: hrw-secret
+              key: azure-hrw.filestorage.connectionstring
+        - name: db_mssql_port
+          value: {{ .Values.mssql.port | quote }}
+        - name: hrw_auth_encryptionkey
+          valueFrom:
+            secretKeyRef:
+              name: hrw-secret
+              key: hrw.auth.encryptionkey
+        {{ end }}
+        # App Settings
+        {{ if eq .Values.environment.type "onprem" }}
+        - name: ConnectionStrings__HRW
+          value: "Server=hrw-mssql-svc,$(db_mssql_port);Database=hrw;Integrated Security=False;User ID=$(db_hrw_user_name);Password=$(db_hrw_user_password);MultipleActiveResultSets=True;Connection Timeout=10;TrustServerCertificate=true;Application Name=K8S.HRW"
+        - name: ConnectionStrings__Hangfire
+          value: "Server=hrw-mssql-svc,$(db_mssql_port);Database=hrw;Integrated Security=False;User ID=$(db_hangfire_user_name);Password=$(db_hangfire_user_password);MultipleActiveResultSets=True;Connection Timeout=10;TrustServerCertificate=true;Application Name=K8S.HRW.Hangfire"
+        - name: Storage__Local__StorageRoot
+          value: /volume/repository/hrw/
+        - name: Storage__AzureBlobStorage__ConnectionString
+          value: "$(azure_hrw_filestorage_connectionstring)"
+        - name: Auth__AdServer
+          valueFrom:
+            configMapKeyRef:
+              name: hrw-config
+              key: hrw-ad-server
+        - name: Auth__EncryptionKey
+          value: "$(hrw_auth_encryptionkey)"
+        {{ end }}
+        - name: TZ
+          value: Europe/Warsaw
+        - name: Auth__UserSessionExpirationInMinutes
+          value: "20"
+        - name: Storage__Type
+          value: {{ .Values.hrw.storageType }}
+        - name: Auth__Enabled
+          value: {{ .Values.hrw.onpremAdEnabled | quote }}
+        - name: AzureAd__Enabled
+          value: {{ .Values.hrw.azureAdEnabled | quote }}
+        - name: AzureAd__TenantId
+          value: {{ .Values.hrw.azureAdTenantId }}
+        - name: AzureAd__ClientId
+          value: {{ .Values.hrw.azureAdClientId }}
+        - name: AzureAd__RedirectUri
+          value: {{ .Values.hrw.azureAdRedirectUri }}
+        - name: AZURE_USE_KEY_VAULT
+          value: {{ .Values.hrw.keyVaultEnabled | quote }}
+        - name: AzureKeyVault__Url
+          value: {{ .Values.hrw.keyVaultUrl }}
+        {{ if eq .Values.environment.type "azure" }}
+        - name: AzureKeyVault__ManagedIdentityClientId
+          valueFrom:
+            configMapKeyRef:
+              name: aks-config
+              key: managed-identity-client-id
+        {{ end }}
+        - name: App__HrwUrl
+          value: {{ .Values.hrw.url }}
+        - name: Hangfire__AddHangfireServer
+          value: {{ .Values.hrw.addHangfireServer | quote }}
+        - name: ExternalApi__HRWService
+          value: {{ .Values.hrw.externalApi }}
+        - name: Redis__StackExchangeConnectionString
+          value: redis-svc
+        - name: Serilog__MinimumLevel__Default
+          value: {{ .Values.hrw.serilogMinimumLevel }}
+        - name: Serilog__MinimumLevel__Microsoft
+          value: {{ .Values.hrw.serilogMinimumLevel }}
+        - name: Serilog__MinimumLevel__System
+          value: {{ .Values.hrw.serilogMinimumLevel }}
+        # Required for read-only asp.net core container: 'readOnlyRootFilesystem: true'
+        - name: DOTNET_EnableDiagnostics
+          value: "0"
+        # Required for read-only asp.net core container: 'readOnlyRootFilesystem: true' : https://github.com/dotnet/aspnetcore/issues/44765
+        - name: TMPDIR
+          value: /mnt/tmp
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "0.2"
+          limits:
+            memory: "1Gi"
+        readinessProbe:
+            httpGet:
+              path: /healthz/live #/healthz/ready
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+        livenessProbe:
+            httpGet:
+              path: /healthz/live
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+        ports:
+        - containerPort: 8080
+        securityContext:
+           allowPrivilegeEscalation: false
+           readOnlyRootFilesystem: true
+           capabilities:
+            drop:
+            - all
+        volumeMounts:
+        - mountPath: "/mnt/tmp"
+          name: tmpfs
+        {{ if eq .Values.environment.type "onprem" }}
+        - mountPath: "/volume/repository"
+          name: hrw-repository-v
+          #readOnly: false
+        {{ end }}
+      imagePullSecrets:
+        - name: docker-registry-credentials
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hrw-svc
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: hrw
+    k8s-app: hrw
+spec:
+  type: {{ .Values.hrw.serviceType }}
+  selector:
+    app: hrw
+  ports:
+  - name: http
+    protocol: TCP
+    port: 80
+    targetPort: 8080
+    {{ if eq .Values.hrw.serviceType "NodePort" }}
+    nodePort: {{ .Values.hrw.port }}  
+    {{ end }}

@@ -1,0 +1,11 @@
+# ArgoCD configuration
+## Ref: https://github.com/argoproj/argo-cd
+##
+
+## Argo Configs
+server:
+  extraArgs:
+  ## disable TLS on ArgoCD server when TLS termination on F5
+    - --insecure
+  service:
+    type: "ClusterIP"

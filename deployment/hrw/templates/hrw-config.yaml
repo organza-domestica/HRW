@@ -1,0 +1,9 @@
+{{ if eq .Values.environment.type "onprem" }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hrw-config
+  namespace: {{ .Values.namespace }}
+data:
+  hrw-ad-server: {{ .Values.config.ADServer }}
+{{ end }}

@@ -1,0 +1,61 @@
+# Default values for hrw.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+config:
+  ADServer: MWAWPOSADC003.luxmed.pl
+
+namespace: hrw-ns
+
+environment:
+  type: onprem # azure onprem
+
+hrw:
+  url: https://hrw.luxmed.pl
+  replicas: 1
+  serilogMinimumLevel: Information
+  addHangfireServer: false
+  port: 32000
+  image: azlxcrhrwdev.azurecr.io/hrw:v0.19.1.20230109 # azlxcrhrwdev.azurecr.io/hrw:v0.19.0.20221202 vssandboxcr.azurecr.io/hrw:v0.19.0.20221121
+  externalApi: https://hrwservice-be-azure.dv11-be.tl.pl/HRW/Service/api/
+  storageType: Local # Local AzureBlobStorage
+  keyVaultEnabled: false
+  keyVaultUrl: https://lm-kv-hrw-dev.vault.azure.net/
+  serviceType: ClusterIP # LoadBalancer NodePort ClusterIP
+  onpremAdEnabled: true
+  azureAdEnabled: false
+  azureAdTenantId: "5c31e633-3f56-44e3-89d7-1ada903ce696"
+  azureAdClientId: "f84e930b-849a-4861-bec0-c20be5e79edc"
+  azureAdRedirectUri: "https://hrw.dv11.tl.pl/login"
+
+ingress:
+  host: hrw.luxmed.pl
+
+redis:
+  replicas: 1
+  image: redis:5.0.4
+
+mssql:
+  # M000W00SQL016\DUC03
+  ip: 10.130.21.176
+  port: 10434
+  # m000w00sql006\DUC03
+  #ip: 10.130.21.166
+  #port: 10434
+  # m000w00sql006\DUC02
+  #ip: 10.130.21.166
+  #port: 10433
+  # MWAWPOSSQL096
+  #ip: 10.130.21.11
+  #port: 1453
+  # ws2012data
+  #ip: 10.16.46.19
+  #port: 1433
+
+repository:
+  path: "/run/desktop/mnt/host/c/volume/repository" #"/host_mnt/c/volume/repository"
+  size: "1Gi"
+  persistentVolume: "hrw-repository-pv"
+
+kubePrometheusStack:
+  namespace: monitoring

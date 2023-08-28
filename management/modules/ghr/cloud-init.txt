@@ -1,0 +1,22 @@
+#cloud-config
+packages:
+ - jq
+ - vim
+ - nodejs
+write_files:
+- path: /tmp/gh-runner-stack-install.sh
+  content: |
+    #!/bin/bash
+    sudo dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
+    sudo dnf install docker-ce -y
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    sudo usermod -a -G docker lxadmin
+    export RUNNER_CFG_PAT=${gh_pat}
+    curl -s https://raw.githubusercontent.com/actions/runner/main/scripts/create-latest-svc.sh | bash -s -- -s LUXMED/HRW -l ${subscription_env}
+  owner: 'root:root'
+  permissions: '0555'
+  defer: true
+runcmd:
+    - cd /home/lxadmin && su lxadmin -c /tmp/gh-runner-stack-install.sh
+#package_upgrade: true

@@ -1,0 +1,24 @@
+{{ if eq .Values.environment.type "onprem" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: hrw-mssql-svc
+  namespace: {{ .Values.namespace }}
+spec:
+  type: NodePort
+  ports:
+  - port: {{ .Values.mssql.port }}
+    targetPort: {{ .Values.mssql.port }}
+    protocol: TCP
+--- 
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: hrw-mssql-svc
+  namespace: {{ .Values.namespace }}
+subsets:
+  - addresses:
+    - ip: {{ .Values.mssql.ip }}
+    ports:
+    - port: {{ .Values.mssql.port }}
+{{ end }}
